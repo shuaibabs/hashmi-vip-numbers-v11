@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { usePathname } from 'next/navigation';
@@ -44,23 +43,23 @@ const navItems: {
   adminOnly: boolean;
   devOnly?: boolean;
 }[] = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, adminOnly: false },
-  { href: '/numbers', label: 'All Numbers', icon: Smartphone, adminOnly: false },
-  { href: '/pre-booking', label: 'Pre-Booking', icon: Bookmark, adminOnly: false },
-  { href: '/sales', label: 'Sales', icon: DollarSign, adminOnly: false },
-  { href: '/manage-sales', label: 'Manage Sales', icon: Database, adminOnly: false },
-  { href: '/port-out', label: 'Port Out', icon: LogOut, adminOnly: false },
-  { href: '/postpaid', label: 'Postpaid Numbers', icon: Signal, adminOnly: false },
-  { href: '/cocp', label: 'COCP', icon: RadioTower, adminOnly: false },
-  { href: '/partners', label: 'Partners', icon: Handshake, adminOnly: false },
-  { href: '/sim-locations', label: 'SIM Locations', icon: MapPin, adminOnly: false },
-  { href: '/reminders', label: 'Work Reminders', icon: ClipboardList, adminOnly: false },
-  { href: '/activities', label: 'Activities', icon: History, adminOnly: false },
-  { href: '/import-export', label: 'Import / Export', icon: FileOutput, adminOnly: false },
-  { href: '/dealer-purchases', label: 'Dealer Purchases', icon: ShoppingCart, adminOnly: false },
-  { href: '/signup', label: 'Create User', icon: UserPlus, adminOnly: true },
-  { href: '/users', label: 'Manage Users', icon: Users, adminOnly: true },
-];
+    { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, adminOnly: false },
+    { href: '/numbers', label: 'All Numbers', icon: Smartphone, adminOnly: false },
+    { href: '/postpaid', label: 'Postpaid Numbers', icon: Signal, adminOnly: false },
+    { href: '/pre-booking', label: 'Pre-Booking', icon: Bookmark, adminOnly: false },
+    { href: '/partners', label: 'Partners', icon: Handshake, adminOnly: false },
+    { href: '/signup', label: 'Create User', icon: UserPlus, adminOnly: true },
+    { href: '/users', label: 'Manage Users', icon: Users, adminOnly: true },
+    { href: '/sim-locations', label: 'SIM Locations', icon: MapPin, adminOnly: false },
+    { href: '/sales', label: 'Sales', icon: DollarSign, adminOnly: false },
+    { href: '/manage-sales', label: 'Manage Sales', icon: Database, adminOnly: false },
+    { href: '/dealer-purchases', label: 'Dealer Purchases', icon: ShoppingCart, adminOnly: false },
+    { href: '/reminders', label: 'Work Reminders', icon: ClipboardList, adminOnly: false },
+    { href: '/cocp', label: 'COCP', icon: RadioTower, adminOnly: false },
+    { href: '/activities', label: 'Activities', icon: History, adminOnly: false },
+    { href: '/history', label: 'Global History', icon: History, adminOnly: false },
+    { href: '/import-export', label: 'Import / Export', icon: FileOutput, adminOnly: false },
+  ];
 
 export function AppSidebar() {
   const pathname = usePathname();
@@ -80,15 +79,9 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader>
-        <div className="flex items-center gap-3 p-2">
-          <img
-            src="\assets\icons\icon.png"
-            alt="App Icon"
-            className="h-8 w-8 object-contain"
-          />
-          <h1 className="text-xl font-bold text-sidebar-foreground">
-            Hashmi VIP Numbers
-          </h1>
+        <div className="flex items-center gap-2 p-2">
+          <RadioTower className="w-8 h-8 text-primary" />
+          <h1 className="text-xl font-bold text-sidebar-foreground">Hashmi VIP Numbers</h1>
         </div>
       </SidebarHeader>
       <SidebarContent>
@@ -123,7 +116,7 @@ export function AppSidebar() {
             </div>
 
             <a
-              href="https://trionexdigital.com"
+              href="https://trionexdigital.netlify.app/"
               target="_blank"
               rel="noopener noreferrer"
               className="mt-1 flex justify-center font-semibold text-sidebar-foreground/90 hover:text-sidebar-foreground transition-colors"

@@ -141,7 +141,7 @@ export default function LoginPage() {
               </div>
 
               <a
-                href="https://trionexdigital.com"
+                href="https://trionexdigital.netlify.app/"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-1 flex justify-center font-semibold text-sidebar-foreground/90 hover:text-sidebar-foreground transition-colors"

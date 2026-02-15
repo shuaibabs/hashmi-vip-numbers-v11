@@ -1,5 +1,4 @@
 
-
 import { Timestamp } from 'firebase/firestore';
 
 // Base User profile stored in Firestore
@@ -9,6 +8,15 @@ export type User = {
   displayName: string;
   role: 'admin' | 'employee';
   id: string; // Firestore document ID is the same as uid
+};
+
+// New type for individual history events on a number
+export type LifecycleEvent = {
+  id: string; // A unique ID for the event
+  action: string;
+  description: string;
+  timestamp: Timestamp;
+  performedBy: string; // Name of the user or 'System'
 };
 
 // Raw record from Firestore
@@ -38,12 +46,13 @@ export type NumberRecord = {
   partnerName?: string;
   billDate?: Timestamp | null;
   pdBill?: 'Yes' | 'No';
+  history?: LifecycleEvent[]; // Array to store the number's entire history
 };
 
 // Type for creating a new number, omitting Firestore-generated fields
 export type NewNumberData = Omit<
   NumberRecord,
-  'id' | 'srNo' | 'createdBy' | 'checkInDate' | 'purchaseDate' | 'sum' | 'safeCustodyDate' | 'billDate'
+  'id' | 'srNo' | 'createdBy' | 'checkInDate' | 'purchaseDate' | 'sum' | 'safeCustodyDate' | 'billDate' | 'history'
 > & { purchaseDate: Date; rtsDate?: Date, safeCustodyDate?: Date, billDate?: Date };
 
 
@@ -54,9 +63,7 @@ export type SaleRecord = {
   sum: number;
   soldTo: string;
   salePrice: number;
-  paymentStatus: 'Pending' | 'Done';
   saleDate: Timestamp;
-  portOutStatus: 'Pending' | 'Done';
   uploadStatus: 'Pending' | 'Done';
   createdBy: string;
   originalNumberData: Omit<NumberRecord, 'id'>;
@@ -72,8 +79,6 @@ export type PreBookingRecord = {
   createdBy: string;
   originalNumberData: Omit<NumberRecord, 'id'>;
 }
-
-export type PortOutRecord = Omit<SaleRecord, 'portOutStatus'> & { portOutDate: Timestamp };
 
 export type Reminder = {
   id: string; // Firestore document ID
@@ -108,12 +113,10 @@ export type DealerPurchaseRecord = {
   sum: number;
   dealerName: string;
   price: number;
-  paymentStatus: 'Pending' | 'Done';
-  portOutStatus: 'Pending' | 'Done';
   createdBy: string;
 };
 
-export type NewDealerPurchaseData = Omit<DealerPurchaseRecord, 'id' | 'srNo' | 'createdBy' | 'paymentStatus' | 'portOutStatus' | 'sum' >;
+export type NewDealerPurchaseData = Omit<DealerPurchaseRecord, 'id' | 'srNo' | 'createdBy' | 'sum' >;
 
 export type PaymentRecord = {
     id: string;
@@ -126,4 +129,22 @@ export type PaymentRecord = {
 };
 
 export type NewPaymentData = Omit<PaymentRecord, 'id' | 'srNo' | 'createdBy' | 'paymentDate'> & { paymentDate: Date };
-    
+
+export type GlobalHistoryRecord = {
+  id: string; // A unique ID for the history record itself (e.g., collection-docId)
+  mobile: string;
+  rtsStatus: 'RTS' | 'Non-RTS' | 'N/A';
+  numberType: 'Prepaid' | 'Postpaid' | 'COCP' | 'N/A';
+  currentStage: 'In Inventory' | 'Sold' | 'Pre-Booked' | 'Dealer Purchase';
+  saleInfo?: {
+    soldTo: string;
+    saleDate: Timestamp;
+    salePrice: number;
+  };
+  purchaseInfo?: {
+    purchaseFrom: string;
+    purchaseDate: Timestamp | null;
+    purchasePrice: number;
+  };
+  history?: LifecycleEvent[];
+};

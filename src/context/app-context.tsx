@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import type { ReactNode } from 'react';
@@ -12,12 +11,13 @@ import {
   NewNumberData,
   type DealerPurchaseRecord,
   NewDealerPurchaseData,
-  type PortOutRecord,
   NewReminderData,
   type User,
   PreBookingRecord,
   NewPaymentData,
   PaymentRecord,
+  GlobalHistoryRecord,
+  LifecycleEvent,
 } from '@/lib/data';
 import { useToast } from '@/hooks/use-toast';
 import { isToday, isPast, isValid, parse, subDays } from 'date-fns';
@@ -39,6 +39,7 @@ import {
   Unsubscribe,
   QuerySnapshot,
   QueryDocumentSnapshot,
+  arrayUnion,
 } from 'firebase/firestore';
 import { useFirestore } from '@/firebase';
 import { errorEmitter } from '@/firebase/error-emitter';
@@ -105,7 +106,6 @@ type AppContextType = {
   loading: boolean;
   numbers: NumberRecord[];
   sales: SaleRecord[];
-  portOuts: PortOutRecord[];
   reminders: Reminder[];
   activities: Activity[];
   users: User[];
@@ -114,6 +114,7 @@ type AppContextType = {
   dealerPurchases: DealerPurchaseRecord[];
   preBookings: PreBookingRecord[];
   payments: PaymentRecord[];
+  globalHistory: GlobalHistoryRecord[];
   seenActivitiesCount: number;
   recentlyAutoRtsIds: string[];
   showReminderPopup: boolean;
@@ -125,9 +126,6 @@ type AppContextType = {
   updateNumberStatus: (id: string, status: 'RTS' | 'Non-RTS', rtsDate: Date | null, note?: string) => void;
   updateUploadStatus: (id: string, uploadStatus: 'Pending' | 'Done') => void;
   bulkUpdateUploadStatus: (numberIds: string[], uploadStatus: 'Pending' | 'Done') => void;
-  updateSaleStatuses: (id: string, statuses: { paymentStatus: 'Done' | 'Pending'; }) => void;
-  markSaleAsPortedOut: (saleId: string) => void;
-  bulkMarkAsPortedOut: (sales: SaleRecord[]) => void;
   markReminderDone: (id: string, note?: string) => void;
   addActivity: (activity: Omit<Activity, 'id' | 'srNo' | 'timestamp' | 'createdBy'>, showToast?: boolean) => void;
   assignNumbersToEmployee: (numberIds: string[], employeeName: string, location: { locationType: 'Store' | 'Employee' | 'Dealer'; currentLocation: string; }) => void;
@@ -138,15 +136,11 @@ type AppContextType = {
   addNumber: (data: NewNumberData) => void;
   addMultipleNumbers: (data: NewNumberData, validNumbers: string[]) => Promise<void>;
   addDealerPurchase: (data: NewDealerPurchaseData) => void;
-  updateDealerPurchase: (id: string, statuses: { paymentStatus: 'Done' | 'Pending'; portOutStatus: 'Done' | 'Pending'; }) => void;
-  deletePortOuts: (records: PortOutRecord[]) => void;
   bulkAddNumbers: (records: any[]) => Promise<BulkAddResult>;
   addReminder: (data: NewReminderData, showToast?: boolean) => Promise<void>;
   deleteReminder: (id: string) => void;
   assignRemindersToUsers: (reminderIds: string[], userNames: string[]) => void;
   deleteDealerPurchases: (records: DealerPurchaseRecord[]) => void;
-  updatePortOutStatus: (id: string, status: { paymentStatus: 'Done' | 'Pending' }) => void;
-  bulkUpdatePortOutPaymentStatus: (portOutIds: string[], paymentStatus: 'Pending' | 'Done') => void;
   deleteActivities: (activityIds: string[]) => void;
   updateSafeCustodyDate: (numberId: string, newDate: Date) => void;
   bulkUpdateSafeCustodyDate: (numberIds: string[], newDate: Date) => void;
@@ -173,7 +167,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const [numbers, setNumbers] = useState<NumberRecord[]>([]);
   const [sales, setSales] = useState<SaleRecord[]>([]);
-  const [portOuts, setPortOuts] = useState<PortOutRecord[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [dealerPurchases, setDealerPurchases] = useState<DealerPurchaseRecord[]>([]);
@@ -192,7 +185,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const [numbersLoading, setNumbersLoading] = useState(true);
   const [salesLoading, setSalesLoading] = useState(true);
-  const [portOutsLoading, setPortOutsLoading] = useState(true);
   const [remindersLoading, setRemindersLoading] = useState(true);
   const [activitiesLoading, setActivitiesLoading] = useState(true);
   const [dealerPurchasesLoading, setDealerPurchasesLoading] = useState(true);
@@ -206,7 +198,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (!!user && (
       numbersLoading ||
       salesLoading ||
-      portOutsLoading ||
       remindersLoading ||
       activitiesLoading ||
       dealerPurchasesLoading ||
@@ -214,6 +205,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       usersLoading ||
       paymentsLoading
     ));
+
+  const createLifecycleEvent = useCallback((action: string, description: string, performedBy: string): LifecycleEvent => ({
+    id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+    action,
+    description,
+    timestamp: Timestamp.now(),
+    performedBy,
+  }), []);
     
   const getSeenCountKey = useCallback(() => {
     return user ? `seenActivitiesCount_${user.uid}` : null;
@@ -309,7 +308,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // If not logged in, reset state and stop loading
       setNumbers([]);
       setSales([]);
-      setPortOuts([]);
       setReminders([]);
       setActivities([]);
       setDealerPurchases([]);
@@ -320,7 +318,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setVendors([]);
       setNumbersLoading(false);
       setSalesLoading(false);
-      setPortOutsLoading(false);
       setRemindersLoading(false);
       setActivitiesLoading(false);
       setDealerPurchasesLoading(false);
@@ -333,7 +330,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Set loading true when user changes
     setNumbersLoading(true);
     setSalesLoading(true);
-    setPortOutsLoading(true);
     setRemindersLoading(true);
     setActivitiesLoading(true);
     setDealerPurchasesLoading(true);
@@ -345,7 +341,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const collectionMappings = [
       { name: 'numbers', setter: setNumbers, loader: setNumbersLoading },
       { name: 'sales', setter: setSales, loader: setSalesLoading },
-      { name: 'portouts', setter: setPortOuts, loader: setPortOutsLoading },
       { name: 'reminders', setter: setReminders, loader: setRemindersLoading },
       { name: 'activities', setter: setActivities, loader: setActivitiesLoading },
       { name: 'dealerPurchases', setter: setDealerPurchases, loader: setDealerPurchasesLoading },
@@ -407,20 +402,92 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setVendors(uniqueVendors.sort());
   }, [sales]);
 
+  const globalHistory = useMemo<GlobalHistoryRecord[]>(() => {
+    if (loading) return [];
+
+    const inventoryHistory: GlobalHistoryRecord[] = numbers.map(num => ({
+      id: `numbers-${num.id}`,
+      mobile: num.mobile,
+      rtsStatus: num.status,
+      numberType: num.numberType,
+      currentStage: 'In Inventory',
+      purchaseInfo: {
+        purchaseFrom: num.purchaseFrom,
+        purchaseDate: num.purchaseDate,
+        purchasePrice: num.purchasePrice,
+      },
+      history: num.history,
+    }));
+
+    const salesHistory: GlobalHistoryRecord[] = sales.map(sale => ({
+      id: `sales-${sale.id}`,
+      mobile: sale.mobile,
+      rtsStatus: sale.originalNumberData?.status || 'N/A',
+      numberType: sale.originalNumberData?.numberType || 'N/A',
+      currentStage: 'Sold',
+      purchaseInfo: sale.originalNumberData ? {
+        purchaseFrom: sale.originalNumberData.purchaseFrom,
+        purchaseDate: sale.originalNumberData.purchaseDate,
+        purchasePrice: sale.originalNumberData.purchasePrice,
+      } : undefined,
+      saleInfo: {
+        soldTo: sale.soldTo,
+        saleDate: sale.saleDate,
+        salePrice: sale.salePrice,
+      },
+      history: sale.originalNumberData?.history,
+    }));
+
+    const preBookingHistory: GlobalHistoryRecord[] = preBookings.map(pb => ({
+        id: `prebookings-${pb.id}`,
+        mobile: pb.mobile,
+        rtsStatus: pb.originalNumberData?.status || 'N/A',
+        numberType: pb.originalNumberData?.numberType || 'N/A',
+        currentStage: 'Pre-Booked',
+        purchaseInfo: pb.originalNumberData ? {
+            purchaseFrom: pb.originalNumberData.purchaseFrom,
+            purchaseDate: pb.originalNumberData.purchaseDate,
+            purchasePrice: pb.originalNumberData.purchasePrice,
+        } : undefined,
+        history: pb.originalNumberData?.history,
+    }));
+    
+    const dealerPurchaseHistory: GlobalHistoryRecord[] = dealerPurchases.map(dp => ({
+        id: `dealerPurchases-${dp.id}`,
+        mobile: dp.mobile,
+        rtsStatus: 'N/A',
+        numberType: 'N/A',
+        currentStage: 'Dealer Purchase',
+        purchaseInfo: {
+            purchaseFrom: dp.dealerName,
+            purchaseDate: null, // This info is not available in DealerPurchaseRecord
+            purchasePrice: dp.price,
+        },
+    }));
+
+    return [...inventoryHistory, ...salesHistory, ...preBookingHistory, ...dealerPurchaseHistory];
+  }, [loading, numbers, sales, preBookings, dealerPurchases]);
 
   const isMobileNumberDuplicate = (mobile: string, currentId?: string): boolean => {
     if (!mobile) return false;
-    const allNumbers: { id?: string, mobile: string }[] = [
-      ...numbers,
-      ...sales,
-      ...portOuts,
-      ...dealerPurchases,
-      ...preBookings,
-    ];
+    const allMobiles = new Set([
+      ...numbers.map(n => n.mobile),
+      ...sales.map(s => s.mobile),
+      ...dealerPurchases.map(dp => dp.mobile),
+      ...preBookings.map(pb => pb.mobile),
+    ]);
   
-    return allNumbers.some(item => 
-      item.mobile === mobile && (!currentId || item.id !== currentId)
-    );
+    // For an update operation, we need to check if the new mobile number
+    // exists anywhere *except* for the document being updated.
+    if (currentId) {
+      const currentRecord = numbers.find(n => n.id === currentId);
+      if (currentRecord && currentRecord.mobile !== mobile) {
+        return allMobiles.has(mobile);
+      }
+      return false;
+    }
+  
+    return allMobiles.has(mobile);
   };
 
 
@@ -433,7 +500,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (!db) return;
 
         const batch = writeBatch(db);
-        let updated = false;
         const updatedIds: string[] = [];
         
         numbers.forEach(num => {
@@ -441,19 +507,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 const rtsDateObj = num.rtsDate.toDate();
                 if (isValid(rtsDateObj) && (isToday(rtsDateObj) || isPast(rtsDateObj))) {
                     const docRef = doc(db, 'numbers', num.id);
-                    batch.update(docRef, { status: 'RTS', rtsDate: null });
+                    const historyEvent = createLifecycleEvent('RTS Status Changed', 'Number automatically became RTS as per schedule.', 'System');
+                    batch.update(docRef, { status: 'RTS', rtsDate: null, history: arrayUnion(historyEvent) });
                     addActivity({
                         employeeName: 'System',
                         action: 'Auto-updated to RTS',
                         description: `Number ${num.mobile} automatically became RTS.`
                     }, false);
-                    updated = true;
                     updatedIds.push(num.id);
                 }
             }
         });
 
-        if (updated) {
+        if (updatedIds.length > 0) {
             setRecentlyAutoRtsIds(updatedIds);
             setTimeout(() => setRecentlyAutoRtsIds([]), 5 * 60 * 1000); // Clear after 5 minutes
             
@@ -471,7 +537,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     checkRtsDates();
     const interval = setInterval(checkRtsDates, 60000);
     return () => clearInterval(interval);
-  }, [db, numbers, numbersLoading, authLoading, user, addActivity]);
+  }, [db, numbers, numbersLoading, authLoading, user, addActivity, createLifecycleEvent]);
   
   useEffect(() => {
     const createSystemReminders = async () => {
@@ -486,22 +552,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       let operationsExist = false;
       
       const existingTaskIds = new Set(reminders.map(r => r.taskId).filter(Boolean));
-
-      // Postpaid Bill Date Reminders
-      const postpaidNumbers = numbers.filter(n => n.numberType === 'Postpaid' && n.billDate && (isToday(n.billDate.toDate()) || isPast(n.billDate.toDate())));
-      for (const num of postpaidNumbers) {
-        const taskId = `postpaid-bill-${num.id}-${num.billDate!.toMillis()}`;
-        if (!existingTaskIds.has(taskId)) {
-          batch.set(doc(remindersCollection), {
-            taskId: taskId,
-            taskName: `Postpaid bill payment due for ${num.mobile}`,
-            assignedTo: adminUsers,
-            dueDate: num.billDate,
-            status: 'Pending', createdBy: 'system', srNo: currentReminderSrNo++,
-          });
-          operationsExist = true;
-        }
-      }
 
       // COCP Safe Custody Date Reminders
       const cocpNumbers = numbers.filter(n => n.numberType === 'COCP' && n.safeCustodyDate && (isToday(n.safeCustodyDate.toDate()) || isPast(n.safeCustodyDate.toDate())));
@@ -627,6 +677,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const numDocRef = doc(db, 'numbers', id);
     const existingNumber = numbers.find(n => n.id === id);
     if (!existingNumber) return;
+
+    const performedBy = user.displayName || user.email || 'User';
+    const historyEvent = createLifecycleEvent('Details Updated', `Number details updated by ${performedBy}.`, performedBy);
   
     const updateData: Partial<NumberRecord> = {
       ...data,
@@ -638,7 +691,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       salePrice: data.salePrice || 0,
     };
   
-    await updateDoc(numDocRef, sanitizeObjectForFirestore(updateData))
+    await updateDoc(numDocRef, {...sanitizeObjectForFirestore(updateData), history: arrayUnion(historyEvent) })
       .then(() => {
         addActivity({
           employeeName: user.displayName || user.email || 'User',
@@ -662,6 +715,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const num = numbers.find(n => n.id === id);
     if (!num) return;
 
+    const performedBy = user.displayName || user.email || 'User';
+    const historyEvent = createLifecycleEvent(
+      'RTS Status Changed',
+      `Status changed to ${status}${rtsDate ? ` with RTS date ${rtsDate.toLocaleDateString()}` : ''}. ${note || ''}`.trim(),
+      performedBy
+    );
+
     const updateData: any = {
         status: status,
         rtsDate: status === 'RTS' ? null : (rtsDate ? Timestamp.fromDate(rtsDate) : null)
@@ -669,9 +729,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (note) {
         updateData.notes = `${num.notes || ''}\n${note}`.trim();
     }
-    updateDoc(numDocRef, updateData).then(() => {
+    updateDoc(numDocRef, {...updateData, history: arrayUnion(historyEvent)}).then(() => {
         addActivity({
-            employeeName: user.displayName || user.email || 'User',
+            employeeName: performedBy,
             action: 'Updated RTS Status',
             description: `Marked ${num.mobile} as ${status}`
         });
@@ -690,12 +750,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const numDocRef = doc(db, 'numbers', id);
     const num = numbers.find(n => n.id === id);
     if (!num) return;
+    
+    const performedBy = user.displayName || user.email || 'User';
+    const historyEvent = createLifecycleEvent('Upload Status Changed', `Upload status changed to ${uploadStatus}.`, performedBy);
 
     const updateData = { uploadStatus };
     
-    updateDoc(numDocRef, updateData).then(() => {
+    updateDoc(numDocRef, {...updateData, history: arrayUnion(historyEvent)}).then(() => {
         addActivity({
-            employeeName: user.displayName || user.email || 'User',
+            employeeName: performedBy,
             action: 'Updated Upload Status',
             description: `Set upload status for ${num.mobile} to ${uploadStatus}`
         });
@@ -715,13 +778,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const updateData = { uploadStatus };
     const affectedNumbers = numbers.filter(n => numberIds.includes(n.id)).map(n => n.mobile);
 
+    const performedBy = user.displayName || user.email || 'User';
+    const historyEvent = createLifecycleEvent('Upload Status Changed', `Upload status changed to ${uploadStatus}.`, performedBy);
+
     numberIds.forEach(id => {
       const docRef = doc(db, 'numbers', id);
-      batch.update(docRef, updateData);
+      batch.update(docRef, {...updateData, history: arrayUnion(historyEvent)});
     });
     batch.commit().then(() => {
         addActivity({
-            employeeName: user.displayName || user.email || 'User',
+            employeeName: performedBy,
             action: 'Bulk Updated Upload Status',
             description: createDetailedDescription(`Updated upload status to ${uploadStatus} for`, affectedNumbers)
         });
@@ -739,149 +805,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  const updateSaleStatuses = (id: string, statuses: { paymentStatus: 'Done' | 'Pending'; }) => {
-    if (!db || !user) return;
-    const saleToUpdate = sales.find(s => s.id === id);
-    if (!saleToUpdate) return;
-    
-    const saleDocRef = doc(db, 'sales', id);
-    updateDoc(saleDocRef, statuses).then(() => {
-        addActivity({
-            employeeName: user.displayName || user.email || 'User',
-            action: 'Updated Sale Status',
-            description: `Updated sale for ${saleToUpdate.mobile}. Payment: ${statuses.paymentStatus}.`,
-        });
-    }).catch(async (serverError) => {
-        const permissionError = new FirestorePermissionError({
-            path: saleDocRef.path,
-            operation: 'update',
-            requestResourceData: statuses,
-        });
-        errorEmitter.emit('permission-error', permissionError);
-    });
-  };
-
-  const markSaleAsPortedOut = (saleId: string) => {
-    if (!db || !user) return;
-    const saleToMove = sales.find(s => s.id === saleId);
-    if (!saleToMove) {
-        toast({
-            variant: "destructive",
-            title: "Operation Failed",
-            description: "Could not find the sale record to move.",
-        });
-        return;
-    }
-
-    if (!saleToMove.originalNumberData) {
-         toast({
-            variant: "destructive",
-            title: "Operation Failed",
-            description: "Could not find original number data to archive.",
-        });
-        return;
-    }
-
-    const batch = writeBatch(db);
-    
-    const sanitizedOriginalData = sanitizeObjectForFirestore(saleToMove.originalNumberData);
-
-    const newPortOutData: Omit<PortOutRecord, 'id'> = {
-        srNo: getNextSrNo(portOuts),
-        mobile: saleToMove.mobile,
-        sum: saleToMove.sum,
-        soldTo: saleToMove.soldTo,
-        salePrice: saleToMove.salePrice,
-        paymentStatus: saleToMove.paymentStatus,
-        uploadStatus: saleToMove.uploadStatus,
-        saleDate: saleToMove.saleDate,
-        createdBy: saleToMove.createdBy,
-        originalNumberData: sanitizedOriginalData,
-        portOutDate: Timestamp.now(),
-    };
-
-    batch.set(doc(collection(db, 'portouts')), newPortOutData);
-    batch.delete(doc(db, 'sales', saleId));
-    
-    batch.commit().then(() => {
-        addActivity({
-            employeeName: user.displayName || user.email || 'User',
-            action: 'Marked as Ported Out',
-            description: `Number ${saleToMove.mobile} has been ported out and moved to history.`,
-        });
-    }).catch(async (serverError) => {
-        const permissionError = new FirestorePermissionError({
-            path: `portouts and sales/${saleId}`,
-            operation: 'write',
-            requestResourceData: { info: `Batch write for port out of ${saleToMove.mobile}` },
-        });
-        errorEmitter.emit('permission-error', permissionError);
-    });
-};
-
-const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
-    if (!db || !user || salesToMove.length === 0) return;
-
-    const eligibleSales = salesToMove;
-    const skippedCount = salesToMove.length - eligibleSales.length;
-
-    if (eligibleSales.length === 0) {
-      toast({
-        variant: "destructive",
-        title: "No Eligible Records",
-        description: "No records were selected to port out.",
-      });
-      return;
-    }
-
-    let currentPortOutSrNo = getNextSrNo(portOuts);
-    const batch = writeBatch(db);
-    const affectedNumbers = eligibleSales.map(s => s.mobile);
-
-    eligibleSales.forEach(sale => {
-      const sanitizedOriginalData = sanitizeObjectForFirestore(sale.originalNumberData);
-      const newPortOutData: Omit<PortOutRecord, 'id'> = {
-        srNo: currentPortOutSrNo++,
-        mobile: sale.mobile,
-        sum: sale.sum,
-        soldTo: sale.soldTo,
-        salePrice: sale.salePrice,
-        paymentStatus: sale.paymentStatus,
-        uploadStatus: sale.uploadStatus,
-        saleDate: sale.saleDate,
-        createdBy: sale.createdBy,
-        originalNumberData: sanitizedOriginalData,
-        portOutDate: Timestamp.now(),
-      };
-      batch.set(doc(collection(db, 'portouts')), newPortOutData);
-      batch.delete(doc(db, 'sales', sale.id));
-    });
-
-    batch.commit().then(() => {
-      let toastDescription = `${eligibleSales.length} record(s) marked as ported out.`;
-      
-      addActivity({
-        employeeName: user.displayName || user.email || 'User',
-        action: 'Bulk Port Out',
-        description: createDetailedDescription('Moved to Port Out History:', affectedNumbers)
-      });
-       toast({
-        title: "Bulk Port Out Successful",
-        description: toastDescription,
-      });
-    }).catch(async (serverError) => {
-      const permissionError = new FirestorePermissionError({
-        path: 'sales/portouts',
-        operation: 'write',
-        requestResourceData: { info: `Bulk port out of ${eligibleSales.length} sales.` },
-      });
-      errorEmitter.emit('permission-error', permissionError);
-    });
-  };
-
   const canReminderBeMarkedDone = (reminder: Reminder): { canBeDone: boolean; message: string } => {
     if (!reminder.taskId) {
-      // If it's a manual reminder with no taskId, allow it to be marked done.
       return { canBeDone: true, message: "" };
     }
 
@@ -892,15 +817,6 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
         const custodyDate = number.safeCustodyDate.toDate();
         if (isToday(custodyDate) || isPast(custodyDate)) {
           return { canBeDone: false, message: `The Safe Custody Date for ${number.mobile} has not been updated to a future date.` };
-        }
-      }
-    } else if (reminder.taskId.startsWith('postpaid-bill-')) {
-      const numberId = reminder.taskId.split('-')[2];
-      const number = numbers.find(n => n.id === numberId);
-      if (number && number.billDate) {
-        const billDate = number.billDate.toDate();
-        if (isToday(billDate) || isPast(billDate)) {
-          return { canBeDone: false, message: `The Bill Date for ${number.mobile} has not been updated to the next cycle.` };
         }
       }
     } else if (reminder.taskId.startsWith('prebooked-rts-')) {
@@ -960,6 +876,10 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
   const assignNumbersToEmployee = (numberIds: string[], employeeName: string, location: { locationType: 'Store' | 'Employee' | 'Dealer'; currentLocation: string; }) => {
     if (!db || !user) return;
     const batch = writeBatch(db);
+    const performedBy = user.displayName || user.email || 'User';
+
+    const historyEvent = createLifecycleEvent('Assigned', `Assigned to ${employeeName} and moved to ${location.currentLocation}.`, performedBy);
+    
     const updateData = {
         assignedTo: employeeName,
         name: employeeName,
@@ -970,11 +890,11 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
 
     numberIds.forEach(id => {
       const docRef = doc(db, 'numbers', id);
-      batch.update(docRef, updateData);
+      batch.update(docRef, {...updateData, history: arrayUnion(historyEvent)});
     });
     batch.commit().then(() => {
         addActivity({
-            employeeName: user.displayName || user.email || 'User',
+            employeeName: performedBy,
             action: 'Assigned Numbers',
             description: createDetailedDescription(`Assigned to ${employeeName}:`, affectedNumbers)
         });
@@ -993,9 +913,12 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
     const num = numbers.find(n => n.id === id);
     if (!num) return;
     const numDocRef = doc(db, 'numbers', id);
-    updateDoc(numDocRef, { checkInDate: Timestamp.now() }).then(() => {
+    const performedBy = user.displayName || user.email || 'User';
+    const historyEvent = createLifecycleEvent('Checked In', `SIM Checked In at ${num.currentLocation}.`, performedBy);
+
+    updateDoc(numDocRef, { checkInDate: Timestamp.now(), history: arrayUnion(historyEvent) }).then(() => {
         addActivity({
-            employeeName: user.displayName || user.email || 'User',
+            employeeName: performedBy,
             action: 'Checked In Number',
             description: `Checked in SIM number ${num.mobile}.`
         });
@@ -1015,8 +938,13 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
     if (!soldNumber) return;
 
     const { id: numberId, ...originalDataWithoutId } = soldNumber;
+    
+    const performedBy = user.displayName || user.email || 'User';
+    const historyEvent = createLifecycleEvent('Sold', `Sold to ${details.soldTo} for ₹${details.salePrice}.`, performedBy);
+    
+    const history = [...(originalDataWithoutId.history || []), historyEvent];
 
-    const sanitizedOriginalData = sanitizeObjectForFirestore(originalDataWithoutId);
+    const sanitizedOriginalData = sanitizeObjectForFirestore({...originalDataWithoutId, history });
 
     const newSale: Omit<SaleRecord, 'id'> = {
       srNo: getNextSrNo(sales),
@@ -1024,8 +952,6 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
       sum: calculateDigitalRoot(soldNumber.mobile),
       salePrice: details.salePrice,
       soldTo: details.soldTo,
-      paymentStatus: 'Pending',
-      portOutStatus: 'Pending',
       uploadStatus: soldNumber.uploadStatus || 'Pending',
       saleDate: Timestamp.fromDate(details.saleDate),
       createdBy: user.uid,
@@ -1058,10 +984,14 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
     let currentSaleSrNo = getNextSrNo(sales);
     const batch = writeBatch(db);
     const affectedNumbers = numbersToSell.map(n => n.mobile);
+    const performedBy = user.displayName || user.email || 'User';
+    const historyEvent = createLifecycleEvent('Sold', `Sold to ${details.soldTo} for ₹${details.salePrice}.`, performedBy);
 
     numbersToSell.forEach(soldNumber => {
       const { id: numberId, ...originalDataWithoutId } = soldNumber;
-      const sanitizedOriginalData = sanitizeObjectForFirestore(originalDataWithoutId);
+      
+      const history = [...(originalDataWithoutId.history || []), historyEvent];
+      const sanitizedOriginalData = sanitizeObjectForFirestore({...originalDataWithoutId, history });
 
       const newSale: Omit<SaleRecord, 'id'> = {
         srNo: currentSaleSrNo++,
@@ -1069,8 +999,6 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
         sum: calculateDigitalRoot(soldNumber.mobile),
         salePrice: details.salePrice,
         soldTo: details.soldTo,
-        paymentStatus: 'Pending',
-        portOutStatus: 'Pending',
         uploadStatus: soldNumber.uploadStatus || 'Pending',
         saleDate: Timestamp.fromDate(details.saleDate),
         createdBy: user.uid,
@@ -1118,8 +1046,14 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
         });
         return;
     }
+    
+    const performedBy = user.displayName || user.email || 'User';
+    const historyEvent = createLifecycleEvent('Sale Cancelled', `Sale cancelled and number returned to inventory.`, performedBy);
 
-    const restoredNumberData = sanitizeObjectForFirestore(saleToCancel.originalNumberData);
+    const restoredNumberData = sanitizeObjectForFirestore({
+        ...saleToCancel.originalNumberData,
+        history: [...(saleToCancel.originalNumberData.history || []), historyEvent]
+    });
 
     const restoredNumber: Omit<NumberRecord, 'id'> = {
         ...(restoredNumberData as Omit<NumberRecord, 'id'>),
@@ -1132,7 +1066,7 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
     batch.delete(doc(db, 'sales', saleId));
     batch.commit().then(() => {
         addActivity({
-            employeeName: user.displayName || user.email || 'User',
+            employeeName: performedBy,
             action: 'Cancelled Sale',
             description: `Sale of number ${saleToCancel.mobile} was cancelled and it was returned to inventory.`
         });
@@ -1158,7 +1092,8 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
       return;
     }
     
-    const assignedToUser = user.displayName || user.email || 'User';
+    const performedBy = user.displayName || user.email || 'User';
+    const historyEvent = createLifecycleEvent('Created', `Number added to inventory by ${performedBy}.`, performedBy);
 
     const newNumber: Partial<NumberRecord> = {
         ...data,
@@ -1172,6 +1107,7 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
         checkInDate: null,
         createdBy: user.uid,
         purchaseDate: Timestamp.fromDate(data.purchaseDate),
+        history: [historyEvent]
     };
 
     if (data.ownershipType !== 'Partnership') {
@@ -1195,7 +1131,7 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
     const numbersCollection = collection(db, 'numbers');
     addDoc(numbersCollection, sanitizeObjectForFirestore(newNumber)).then(() => {
         addActivity({
-            employeeName: user.displayName || user.email || 'User',
+            employeeName: performedBy,
             action: 'Added Number',
             description: `Manually added new number ${data.mobile}`
         });
@@ -1212,7 +1148,8 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
   const addMultipleNumbers = async (data: NewNumberData, validNumbers: string[]) => {
     if (!db || !user || validNumbers.length === 0) return;
     
-    const assignedToUser = user.displayName || user.email || 'User';
+    const performedBy = user.displayName || user.email || 'User';
+    const historyEvent = createLifecycleEvent('Created', `Number added to inventory via bulk add by ${performedBy}.`, performedBy);
     let currentSrNo = getNextSrNo(numbers);
     const batch = writeBatch(db);
     const numbersCollection = collection(db, 'numbers');
@@ -1232,6 +1169,7 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
           checkInDate: null,
           createdBy: user.uid,
           purchaseDate: Timestamp.fromDate(data.purchaseDate),
+          history: [historyEvent]
       };
 
       if (data.ownershipType !== 'Partnership') newNumber.partnerName = '';
@@ -1283,8 +1221,6 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
       ...data,
       srNo: getNextSrNo(dealerPurchases),
       sum: calculateDigitalRoot(data.mobile),
-      paymentStatus: 'Pending',
-      portOutStatus: 'Pending',
       createdBy: user.uid,
     };
     const dealerPurchasesCollection = collection(db, 'dealerPurchases');
@@ -1304,95 +1240,11 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
     });
   };
 
-  const updateDealerPurchase = (id: string, statuses: { paymentStatus: 'Done' | 'Pending'; portOutStatus: 'Done' | 'Pending'; }) => {
-    if (!db || !user) return;
-    const purchase = dealerPurchases.find(p => p.id === id);
-    if (!purchase) return;
-    const docRef = doc(db, 'dealerPurchases', id);
-
-    updateDoc(docRef, statuses).then(() => {
-        addActivity({
-            employeeName: user.displayName || user.email || 'User',
-            action: 'Updated Dealer Purchase',
-            description: `Updated status for ${purchase.mobile}.`,
-        });
-    }).catch(async (serverError) => {
-        const permissionError = new FirestorePermissionError({
-            path: docRef.path,
-            operation: 'update',
-            requestResourceData: statuses,
-        });
-        errorEmitter.emit('permission-error', permissionError);
-    });
-  };
-
-  const deletePortOuts = (recordsToDelete: PortOutRecord[]) => {
-    if (!db || !user) return;
-
-    const pendingPaymentRecords = recordsToDelete.filter(r => r.paymentStatus === 'Pending');
-    if (pendingPaymentRecords.length > 0) {
-        toast({
-            variant: "destructive",
-            title: "Deletion Blocked",
-            description: `Cannot delete ${pendingPaymentRecords.length} record(s) with "Pending" payment status. Please mark payments as "Done" first.`,
-            duration: 5000,
-        });
-        return;
-    }
-    
-    const idsToDelete = recordsToDelete.map(r => r.id);
-    const affectedNumbers = recordsToDelete.map(r => r.mobile);
-
-    const batch = writeBatch(db);
-    idsToDelete.forEach(id => {
-        batch.delete(doc(db, 'portouts', id));
-    });
-
-    batch.commit().then(() => {
-        addActivity({
-            employeeName: user.displayName || user.email || 'User',
-            action: 'Deleted Port Out Records',
-            description: createDetailedDescription('Deleted from Port Out history:', affectedNumbers)
-        });
-    }).catch(async (serverError) => {
-        const permissionError = new FirestorePermissionError({
-            path: 'portouts',
-            operation: 'delete',
-            requestResourceData: {info: `Batch delete ${idsToDelete.length} records`},
-        });
-        errorEmitter.emit('permission-error', permissionError);
-    });
-  }
-
   const deleteDealerPurchases = (recordsToDelete: DealerPurchaseRecord[]) => {
     if (!db || !user) return;
 
-    const recordsThatCanBeDeleted: DealerPurchaseRecord[] = [];
-    const recordsThatCannotBeDeleted: DealerPurchaseRecord[] = [];
-
-    recordsToDelete.forEach(record => {
-      if (record.paymentStatus === 'Done' && record.portOutStatus === 'Done') {
-        recordsThatCanBeDeleted.push(record);
-      } else {
-        recordsThatCannotBeDeleted.push(record);
-      }
-    });
-    
-    if (recordsThatCannotBeDeleted.length > 0) {
-      toast({
-        variant: "destructive",
-        title: "Deletion Blocked",
-        description: `${recordsThatCannotBeDeleted.length} record(s) could not be deleted because all statuses are not complete.`,
-        duration: 7000,
-      });
-    }
-
-    if (recordsThatCanBeDeleted.length === 0) {
-      return; // No records to delete
-    }
-
-    const idsToDelete = recordsThatCanBeDeleted.map(r => r.id);
-    const affectedNumbers = recordsThatCanBeDeleted.map(r => r.mobile);
+    const idsToDelete = recordsToDelete.map(r => r.id);
+    const affectedNumbers = recordsToDelete.map(r => r.mobile);
     const batch = writeBatch(db);
     idsToDelete.forEach(id => {
       batch.delete(doc(db, 'dealerPurchases', id));
@@ -1444,70 +1296,20 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
         errorEmitter.emit('permission-error', permissionError);
     });
   }
-  
-  const updatePortOutStatus = (id: string, status: { paymentStatus: 'Done' | 'Pending' }) => {
-    if (!db || !user) return;
-    const portOut = portOuts.find(p => p.id === id);
-    if (!portOut) return;
-    const docRef = doc(db, 'portouts', id);
-
-    updateDoc(docRef, status).then(() => {
-        addActivity({
-            employeeName: user.displayName || user.email || 'User',
-            action: 'Updated Port Out Status',
-            description: `Updated payment status for ${portOut.mobile} to ${status.paymentStatus}.`,
-        });
-    }).catch(async (serverError) => {
-        const permissionError = new FirestorePermissionError({
-            path: docRef.path,
-            operation: 'update',
-            requestResourceData: status,
-        });
-        errorEmitter.emit('permission-error', permissionError);
-    });
-  };
-
-  const bulkUpdatePortOutPaymentStatus = (portOutIds: string[], paymentStatus: 'Pending' | 'Done') => {
-    if (!db || !user) return;
-    const batch = writeBatch(db);
-    const updateData = { paymentStatus };
-    const affectedNumbers = portOuts.filter(p => portOutIds.includes(p.id)).map(p => p.mobile);
-
-    portOutIds.forEach(id => {
-      const docRef = doc(db, 'portouts', id);
-      batch.update(docRef, updateData);
-    });
-    batch.commit().then(() => {
-        addActivity({
-            employeeName: user.displayName || user.email || 'User',
-            action: 'Bulk Updated Port Out Payment Status',
-            description: createDetailedDescription(`Updated payment status to ${paymentStatus} for`, affectedNumbers)
-        });
-        toast({
-            title: "Update Successful",
-            description: `Updated payment status for ${portOutIds.length} record(s).`
-        });
-    }).catch(async (serverError) => {
-        const permissionError = new FirestorePermissionError({
-            path: 'portouts',
-            operation: 'update',
-            requestResourceData: {info: `Bulk payment status update for ${portOutIds.length} records`},
-        });
-        errorEmitter.emit('permission-error', permissionError);
-    });
-  };
 
   const updateSafeCustodyDate = (numberId: string, newDate: Date) => {
     if (!db || !user) return;
     const num = numbers.find(n => n.id === numberId);
     if (!num) return;
 
+    const performedBy = user.displayName || user.email || 'User';
+    const historyEvent = createLifecycleEvent('COCP Date Changed', `Safe Custody Date changed to ${newDate.toLocaleDateString()}.`, performedBy);
     const numDocRef = doc(db, 'numbers', numberId);
     const updateData = { safeCustodyDate: Timestamp.fromDate(newDate) };
     
-    updateDoc(numDocRef, updateData).then(() => {
+    updateDoc(numDocRef, {...updateData, history: arrayUnion(historyEvent)}).then(() => {
         addActivity({
-            employeeName: user.displayName || user.email || 'User',
+            employeeName: performedBy,
             action: 'Updated Safe Custody Date',
             description: `Updated Safe Custody Date for ${num.mobile} to ${newDate.toLocaleDateString()}`
         });
@@ -1524,16 +1326,18 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
   const bulkUpdateSafeCustodyDate = (numberIds: string[], newDate: Date) => {
     if (!db || !user) return;
     const batch = writeBatch(db);
+    const performedBy = user.displayName || user.email || 'User';
+    const historyEvent = createLifecycleEvent('COCP Date Changed', `Safe Custody Date changed to ${newDate.toLocaleDateString()}.`, performedBy);
     const updateData = { safeCustodyDate: Timestamp.fromDate(newDate) };
     const affectedNumbers = numbers.filter(n => numberIds.includes(n.id)).map(n => n.mobile);
 
     numberIds.forEach(id => {
         const docRef = doc(db, 'numbers', id);
-        batch.update(docRef, updateData);
+        batch.update(docRef, {...updateData, history: arrayUnion(historyEvent)});
     });
     batch.commit().then(() => {
         addActivity({
-            employeeName: user.displayName || user.email || 'User',
+            employeeName: performedBy,
             action: 'Bulk Updated Safe Custody Date',
             description: createDetailedDescription(`Updated Safe Custody Date to ${newDate.toLocaleDateString()} for`, affectedNumbers)
         });
@@ -1623,15 +1427,17 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
   const updateNumberLocation = (numberIds: string[], location: { locationType: 'Store' | 'Employee' | 'Dealer', currentLocation: string }) => {
     if (!db || !user) return;
     const batch = writeBatch(db);
+    const performedBy = user.displayName || user.email || 'User';
+    const historyEvent = createLifecycleEvent('Location Updated', `Location changed to ${location.currentLocation}.`, performedBy);
     const affectedNumbers = numbers.filter(n => numberIds.includes(n.id)).map(n => n.mobile);
     
     numberIds.forEach(id => {
       const docRef = doc(db, 'numbers', id);
-      batch.update(docRef, location);
+      batch.update(docRef, {...location, history: arrayUnion(historyEvent)});
     });
     batch.commit().then(() => {
         addActivity({
-            employeeName: user.displayName || user.email || 'User',
+            employeeName: performedBy,
             action: 'Updated Number Location',
             description: createDetailedDescription(`Updated location to ${location.currentLocation} for`, affectedNumbers)
         });
@@ -1651,9 +1457,12 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
     const batch = writeBatch(db);
     const numbersToPreBook = numbers.filter(n => numberIds.includes(n.id));
     const affectedNumbers = numbersToPreBook.map(n => n.mobile);
+    const performedBy = user.displayName || user.email || 'User';
+    const historyEvent = createLifecycleEvent('Pre-Booked', 'Number moved to pre-booking list.', performedBy);
 
     numbersToPreBook.forEach(num => {
       const { id, ...originalData } = num;
+      const history = [...(originalData.history || []), historyEvent];
       const newPreBooking: Omit<PreBookingRecord, 'id'> = {
         srNo: currentPreBookingSrNo++,
         mobile: originalData.mobile,
@@ -1661,7 +1470,7 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
         uploadStatus: originalData.uploadStatus,
         preBookingDate: Timestamp.now(),
         createdBy: user.uid,
-        originalNumberData: sanitizeObjectForFirestore(originalData),
+        originalNumberData: sanitizeObjectForFirestore({...originalData, history}),
       };
       batch.set(doc(collection(db, 'prebookings')), newPreBooking);
       batch.delete(doc(db, 'numbers', num.id));
@@ -1669,7 +1478,7 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
 
     batch.commit().then(() => {
       addActivity({
-        employeeName: user.displayName || user.email || 'User',
+        employeeName: performedBy,
         action: 'Pre-Booked Numbers',
         description: createDetailedDescription('Moved to Pre-Booking:', affectedNumbers),
       });
@@ -1695,7 +1504,13 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
       return;
     }
     
-    const restoredNumberData = sanitizeObjectForFirestore(preBookingToCancel.originalNumberData);
+    const performedBy = user.displayName || user.email || 'User';
+    const historyEvent = createLifecycleEvent('Pre-booking Cancelled', `Pre-booking was cancelled.`, performedBy);
+    
+    const restoredNumberData = sanitizeObjectForFirestore({
+        ...preBookingToCancel.originalNumberData,
+        history: [...(preBookingToCancel.originalNumberData.history || []), historyEvent]
+    });
     const restoredNumber: Omit<NumberRecord, 'id'> = {
       ...(restoredNumberData as Omit<NumberRecord, 'id'>),
     };
@@ -1706,7 +1521,7 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
     
     batch.commit().then(() => {
       addActivity({
-        employeeName: user.displayName || user.email || 'User',
+        employeeName: performedBy,
         action: 'Cancelled Pre-Booking',
         description: `Cancelled pre-booking for ${preBookingToCancel.mobile} and returned it to inventory.`,
       });
@@ -1728,18 +1543,21 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
       return;
     }
 
+    const performedBy = user.displayName || user.email || 'User';
+    const historyEvent = createLifecycleEvent('Sold', `Sold from pre-booking to ${details.soldTo} for ₹${details.salePrice}.`, performedBy);
+
+    const history = [...(preBookingToSell.originalNumberData.history || []), historyEvent];
+
     const newSale: Omit<SaleRecord, 'id'> = {
       srNo: getNextSrNo(sales),
       mobile: preBookingToSell.mobile,
       sum: preBookingToSell.sum,
       salePrice: details.salePrice,
       soldTo: details.soldTo,
-      paymentStatus: 'Pending',
-      portOutStatus: 'Pending',
       uploadStatus: preBookingToSell.uploadStatus || 'Pending',
       saleDate: Timestamp.fromDate(details.saleDate),
       createdBy: user.uid,
-      originalNumberData: sanitizeObjectForFirestore(preBookingToSell.originalNumberData),
+      originalNumberData: sanitizeObjectForFirestore({...preBookingToSell.originalNumberData, history}),
     };
 
     const batch = writeBatch(db);
@@ -1768,23 +1586,25 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
     let currentSaleSrNo = getNextSrNo(sales);
     const batch = writeBatch(db);
     const affectedNumbers = preBookedNumbersToSell.map(n => n.mobile);
+    const performedBy = user.displayName || user.email || 'User';
+    const historyEvent = createLifecycleEvent('Sold', `Sold from pre-booking to ${details.soldTo} for ₹${details.salePrice}.`, performedBy);
 
     preBookedNumbersToSell.forEach(pb => {
       const preBookingToSell = preBookings.find(pre => pre.id === pb.id);
       if (!preBookingToSell || !preBookingToSell.originalNumberData) return;
-
+      
+      const history = [...(preBookingToSell.originalNumberData.history || []), historyEvent];
+      
       const newSale: Omit<SaleRecord, 'id'> = {
         srNo: currentSaleSrNo++,
         mobile: preBookingToSell.mobile,
         sum: preBookingToSell.sum,
         salePrice: details.salePrice,
         soldTo: details.soldTo,
-        paymentStatus: 'Pending',
-        portOutStatus: 'Pending',
         uploadStatus: preBookingToSell.uploadStatus || 'Pending',
         saleDate: Timestamp.fromDate(details.saleDate),
         createdBy: user.uid,
-        originalNumberData: sanitizeObjectForFirestore(preBookingToSell.originalNumberData),
+        originalNumberData: sanitizeObjectForFirestore({...preBookingToSell.originalNumberData, history}),
       };
       
       batch.set(doc(collection(db, 'sales')), newSale);
@@ -1957,7 +1777,10 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
             recordData.pdBill = ['Yes', 'No'].includes(record.PDBill) ? record.PDBill : 'No';
         }
 
-        creations.push({ ...recordData, srNo: currentSrNo++, createdBy: user.uid, checkInDate: null });
+        const performedBy = user.displayName || user.email || 'User';
+        const historyEvent = createLifecycleEvent('Created', `Number imported from CSV file.`, performedBy);
+
+        creations.push({ ...recordData, srNo: currentSrNo++, createdBy: user.uid, checkInDate: null, history: [historyEvent] });
         processedMobiles.add(mobile);
     }
     
@@ -2032,14 +1855,18 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
     if (!db || !user) return;
     const num = numbers.find(n => n.id === id);
     if (!num) return;
+    
+    const performedBy = user.displayName || user.email || 'User';
+    const historyEvent = createLifecycleEvent('Postpaid Details Updated', `Bill Date set to ${details.billDate.toLocaleDateString()}, PD Bill set to ${details.pdBill}.`, performedBy);
+    
     const numDocRef = doc(db, 'numbers', id);
     const updateData = {
         billDate: Timestamp.fromDate(details.billDate),
         pdBill: details.pdBill
     };
-    updateDoc(numDocRef, updateData).then(() => {
+    updateDoc(numDocRef, {...updateData, history: arrayUnion(historyEvent)}).then(() => {
         addActivity({
-            employeeName: user.displayName || user.email || 'User',
+            employeeName: performedBy,
             action: 'Updated Postpaid Details',
             description: `Updated bill details for ${num.mobile}.`
         });
@@ -2056,6 +1883,8 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
   const bulkUpdatePostpaidDetails = (numberIds: string[], details: { billDate: Date, pdBill: 'Yes' | 'No' }) => {
     if (!db || !user) return;
     const batch = writeBatch(db);
+    const performedBy = user.displayName || user.email || 'User';
+    const historyEvent = createLifecycleEvent('Postpaid Details Updated', `Bulk updated: Bill Date to ${details.billDate.toLocaleDateString()}, PD Bill to ${details.pdBill}.`, performedBy);
     const updateData = {
         billDate: Timestamp.fromDate(details.billDate),
         pdBill: details.pdBill
@@ -2064,12 +1893,12 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
 
     numberIds.forEach(id => {
         const docRef = doc(db, 'numbers', id);
-        batch.update(docRef, updateData);
+        batch.update(docRef, {...updateData, history: arrayUnion(historyEvent)});
     });
 
     batch.commit().then(() => {
         addActivity({
-            employeeName: user.displayName || user.email || 'User',
+            employeeName: performedBy,
             action: 'Bulk Updated Postpaid Details',
             description: createDetailedDescription(`Updated bill details for`, affectedNumbers)
         });
@@ -2193,7 +2022,6 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
     loading,
     numbers: roleFilteredNumbers,
     sales,
-    portOuts,
     reminders: roleFilteredReminders,
     activities: roleFilteredActivities,
     users,
@@ -2202,6 +2030,7 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
     dealerPurchases,
     preBookings: roleFilteredPreBookings,
     payments,
+    globalHistory,
     seenActivitiesCount,
     recentlyAutoRtsIds,
     showReminderPopup,
@@ -2216,9 +2045,6 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
     updateNumberStatus,
     updateUploadStatus,
     bulkUpdateUploadStatus,
-    updateSaleStatuses,
-    markSaleAsPortedOut,
-    bulkMarkAsPortedOut,
     markReminderDone,
     addActivity,
     assignNumbersToEmployee,
@@ -2229,15 +2055,11 @@ const bulkMarkAsPortedOut = (salesToMove: SaleRecord[]) => {
     addNumber,
     addMultipleNumbers,
     addDealerPurchase,
-    updateDealerPurchase,
-    deletePortOuts,
     bulkAddNumbers,
     addReminder,
     deleteReminder,
     assignRemindersToUsers,
     deleteDealerPurchases,
-    updatePortOutStatus,
-    bulkUpdatePortOutPaymentStatus,
     deleteActivities,
     updateSafeCustodyDate,
     bulkUpdateSafeCustodyDate,

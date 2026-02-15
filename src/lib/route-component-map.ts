@@ -9,12 +9,12 @@ import ManageUsersPage from '@/app/users/page';
 import SimLocationsPage from '@/app/sim-locations/page';
 import SalesPage from '@/app/sales/page';
 import ManageSalesPage from '@/app/manage-sales/page';
-import PortOutPage from '@/app/port-out/page';
 import DealerPurchasesPage from '@/app/dealer-purchases/page';
 import RemindersPage from '@/app/reminders/page';
 import CocpPage from '@/app/cocp/page';
 import ActivitiesPage from '@/app/activities/page';
 import ImportExportPage from '@/app/import-export/page';
+import HistoryPage from '@/app/history/page';
 import NewNumberPage from '@/app/numbers/new/page';
 import NumberDetailsPage from '@/app/numbers/[id]/page';
 import EditNumberPage from '@/app/numbers/[id]/edit/page';
@@ -23,6 +23,7 @@ const staticRouteComponentMap = {
   '/dashboard': DashboardPage,
   '/numbers': AllNumbersPage,
   '/numbers/new': NewNumberPage,
+  '/history': HistoryPage,
   '/postpaid': PostpaidPage,
   '/pre-booking': PreBookingPage,
   '/partners': PartnersPage,
@@ -31,7 +32,6 @@ const staticRouteComponentMap = {
   '/sim-locations': SimLocationsPage,
   '/sales': SalesPage,
   '/manage-sales': ManageSalesPage,
-  '/port-out': PortOutPage,
   '/dealer-purchases': DealerPurchasesPage,
   '/reminders': RemindersPage,
   '/cocp': CocpPage,
@@ -72,6 +72,7 @@ const routeLabels: { [key: string]: string } = {
   '/dashboard': 'Dashboard',
   '/numbers': 'All Numbers',
   '/numbers/new': 'Add Number',
+  '/history': 'Global History',
   '/postpaid': 'Postpaid Numbers',
   '/pre-booking': 'Pre-Booking',
   '/partners': 'Partners',
@@ -80,7 +81,6 @@ const routeLabels: { [key: string]: string } = {
   '/sim-locations': 'SIM Locations',
   '/sales': 'Sales',
   '/manage-sales': 'Manage Sales',
-  '/port-out': 'Port Out',
   '/dealer-purchases': 'Dealer Purchases',
   '/reminders': 'Work Reminders',
   '/cocp': 'COCP',
