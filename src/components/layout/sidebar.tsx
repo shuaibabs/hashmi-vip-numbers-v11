@@ -35,6 +35,7 @@ import Link from 'next/link';
 import { Separator } from '../ui/separator';
 import { useAuth } from '@/context/auth-context';
 import { useNavigation } from '@/context/navigation-context';
+import TrionexLogo from '../icons/trionex-logo';
 
 const navItems: {
   href: string;
@@ -80,9 +81,15 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader>
-        <div className="flex items-center gap-2 p-2">
-            <RadioTower className="w-8 h-8 text-primary"/>
-            <h1 className="text-xl font-bold text-sidebar-foreground">Hashmi VIP Numbers</h1>
+        <div className="flex items-center gap-3 p-2">
+          <img
+            src="\assets\icons\icon.png"
+            alt="App Icon"
+            className="h-8 w-8 object-contain"
+          />
+          <h1 className="text-xl font-bold text-sidebar-foreground">
+            Hashmi VIP Numbers
+          </h1>
         </div>
       </SidebarHeader>
       <SidebarContent>
@@ -108,28 +115,23 @@ export function AppSidebar() {
           })}
         </SidebarMenu>
       </SidebarContent>
-      <SidebarFooter>
+     <SidebarFooter>
         <Separator className="my-2 bg-sidebar-border" />
-         <div className="p-4 text-center text-xs text-sidebar-foreground/70 space-y-2 group-data-[collapsible=icon]:hidden">
-             <div className="flex items-center justify-center gap-2">
-                <span>Developed by</span>
-                 <a href="https://trionex.digital" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 font-semibold text-sidebar-foreground/90 hover:text-sidebar-foreground transition-colors">
-                    <svg
-                        className="w-4 h-4"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        xmlns="http://www.w3.org/2000/svg"
-                        >
-                        <path
-                            fillRule="evenodd"
-                            clipRule="evenodd"
-                            d="M12 2L2 7V17L12 22L22 17V7L12 2ZM12 4.236L19.95 8.718L12 13.2L4.05 8.718L12 4.236ZM13 14.3V19.8L20 16V10.5L13 14.3ZM11 14.3L4 10.5V16L11 19.8V14.3Z"
-                            fill="currentColor"
-                        />
-                    </svg>
-                    <span>Trionex Digital</span>
-                 </a>
+        <div className="p-4 text-center text-xs text-sidebar-foreground/70 space-y-2 group-data-[collapsible=icon]:hidden">
+          <div className="flex flex-col items-center">
+            <div className="w-full text-left">
+              <span>Developed by</span>
             </div>
+
+            <a
+              href="https://trionexdigital.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 flex justify-center font-semibold text-sidebar-foreground/90 hover:text-sidebar-foreground transition-colors"
+            >
+              <TrionexLogo />
+            </a>
+          </div>
         </div>
       </SidebarFooter>
     </Sidebar>
