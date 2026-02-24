@@ -48,14 +48,14 @@ export default function ManageSalesPage() {
 
 
   const soldToOptions = useMemo(() => {
-    const allVendors = roleFilteredSales.map(s => s.soldTo);
-    return ['all', ...Array.from(new Set(allVendors))];
+    const allVendors = roleFilteredSales.map(s => s.soldTo).filter(Boolean);
+    return [...new Set(['all', ...allVendors])];
   }, [roleFilteredSales]);
 
   const filteredSales = useMemo(() => {
     return roleFilteredSales.filter(sale => 
       (soldToFilter === 'all' || sale.soldTo === soldToFilter) &&
-      (sale.mobile.toLowerCase().includes(searchTerm.toLowerCase()))
+      (sale.mobile && sale.mobile.toLowerCase().includes(searchTerm.toLowerCase()))
     );
   }, [roleFilteredSales, soldToFilter, searchTerm]);
 

@@ -46,6 +46,7 @@ const navItems: {
 }[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, adminOnly: false },
   { href: '/numbers', label: 'All Numbers', icon: Smartphone, adminOnly: false },
+  { href: '/history', label: 'Global History', icon: History, adminOnly: false },
   { href: '/postpaid', label: 'Postpaid Numbers', icon: Signal, adminOnly: false },
   { href: '/pre-booking', label: 'Pre-Booking', icon: Bookmark, adminOnly: false },
   { href: '/partners', label: 'Partners', icon: Handshake, adminOnly: false },
@@ -59,7 +60,6 @@ const navItems: {
   { href: '/cocp', label: 'COCP', icon: RadioTower, adminOnly: false },
   { href: '/deleted-numbers', label: 'Deleted Numbers', icon: Trash2, adminOnly: true },
   { href: '/activities', label: 'Activities', icon: History, adminOnly: false },
-  { href: '/history', label: 'Global History', icon: History, adminOnly: false },
   { href: '/import-export', label: 'Import / Export', icon: FileOutput, adminOnly: false },
 ];
 
@@ -115,7 +115,7 @@ export function AppSidebar() {
           })}
         </SidebarMenu>
       </SidebarContent>
-     <SidebarFooter>
+       <SidebarFooter>
         <Separator className="my-2 bg-sidebar-border" />
         <div className="p-4 text-center text-xs text-sidebar-foreground/70 space-y-2 group-data-[collapsible=icon]:hidden">
           <div className="flex flex-col items-center">

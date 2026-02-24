@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useMemo } from 'react';
@@ -39,15 +40,15 @@ export default function SimLocationsPage() {
   }, [numbers, role, user?.displayName]);
 
   const currentLocationOptions = useMemo(() => {
-    const allLocations = roleFilteredNumbers.map(n => n.currentLocation);
-    return ['all', ...Array.from(new Set(allLocations))];
+    const allLocations = roleFilteredNumbers.map(n => n.currentLocation).filter(Boolean);
+    return [...new Set(['all', ...allLocations])];
   }, [roleFilteredNumbers]);
 
   const filteredNumbers = useMemo(() => {
     return roleFilteredNumbers
       .filter(num => locationTypeFilter === 'all' || num.locationType === locationTypeFilter)
       .filter(num => currentLocationFilter === 'all' || num.currentLocation === currentLocationFilter)
-      .filter(num => num.mobile.toLowerCase().includes(searchTerm.toLowerCase()));
+      .filter(num => num.mobile && num.mobile.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [roleFilteredNumbers, locationTypeFilter, currentLocationFilter, searchTerm]);
 
   const totalPages = Math.ceil(filteredNumbers.length / itemsPerPage);
